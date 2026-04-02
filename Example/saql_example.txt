@@ -1,0 +1,98 @@
+-- =============================================
+-- CONTEXT:
+-- Dataset: fictitious_dataset
+-- Columns: Manager, KPI, Value
+--
+-- PROBLEM: A repeater with itemsPerRow = 5
+-- displays KPIs from different managers in the same row.
+--
+-- SOLUTION: Add invisible "padding" records
+-- at the end of each group so that the next manager
+-- always starts on a new row.
+--
+-- Example with sample data:
+-- Ana Silva    → 6 KPIs → padding: 4 → occupies 2 rows
+-- Bruno Costa  → 3 KPIs → padding: 2 → occupies 1 row
+-- Carla Mendes → 5 KPIs → padding: 0 → occupies 1 row
+-- Daniel Rocha → 2 KPIs → padding: 3 → occupies 1 row
+-- =============================================
+
+-- =============================================
+-- STEP 1: Main query — real KPIs per manager
+-- =============================================
+q = load "fictitious_dataset";
+q = group q by ('Gestor', 'KPI');
+q = foreach q generate
+    q.'Gestor' as 'Gestor',
+    q.'KPI' as 'KPI',
+    case
+        when q.'KPI' == "Receita Mensal"    then 1
+        when q.'KPI' == "Taxa de Conversão" then 2
+        when q.'KPI' == "Ticket Médio"      then 3
+        when q.'KPI' == "Churn Rate"        then 4
+        when q.'KPI' == "NPS"               then 5
+        when q.'KPI' == "Novos Clientes"    then 6
+        else 7
+    end as 'Rank',
+    sum(q.'Valor') as 'Valor',
+    "real" as 'RecordType';
+
+q = order q by ('Gestor' asc, 'Rank' asc);
+
+-- =============================================
+-- STEP 2: Count distinct KPIs per manager
+-- =============================================
+c = load "fictitious_dataset";
+c = group c by ('Gestor', 'KPI');
+c = foreach c generate
+    c.'Gestor' as 'Gestor',
+    c.'KPI' as 'KPI';
+
+c = group c by 'Gestor';
+c = foreach c generate
+    c.'Gestor' as 'Gestor',
+    count() as 'cnt';
+
+-- =============================================
+-- STEP 3: Generate padding candidates (seq 1 to 4)
+-- Each copy of 'c' receives a sequence number.
+-- Using direct foreach avoids "cogroup by all",
+-- which would collapse all managers into a single row.
+-- =============================================
+cp1 = foreach c generate c.'Gestor' as 'Gestor', c.'cnt' as 'cnt', 1 as 'seq';
+cp2 = foreach c generate c.'Gestor' as 'Gestor', c.'cnt' as 'cnt', 2 as 'seq';
+cp3 = foreach c generate c.'Gestor' as 'Gestor', c.'cnt' as 'cnt', 3 as 'seq';
+cp4 = foreach c generate c.'Gestor' as 'Gestor', c.'cnt' as 'cnt', 4 as 'seq';
+
+cp = union cp1, cp2, cp3, cp4;
+
+-- =============================================
+-- STEP 4: Keep only required padding rows
+--
+-- Formula: required_padding = (5 - (cnt % 5)) % 5
+--
+-- Examples:
+--   cnt = 6 → (5 - 6%5) % 5 = (5-1)%5 = 4  → keep seq 1,2,3,4
+--   cnt = 3 → (5 - 3%5) % 5 = (5-3)%5 = 2  → keep seq 1,2
+--   cnt = 5 → (5 - 5%5) % 5 = (5-0)%5 = 0  → discard all
+--   cnt = 2 → (5 - 2%5) % 5 = (5-2)%5 = 3  → keep seq 1,2,3
+-- =============================================
+cp = filter cp by 'seq' <= ((5 - ('cnt' % 5)) % 5);
+
+-- Format padding records with empty fields
+cp = foreach cp generate
+    cp.'Gestor' as 'Gestor',
+    "" as 'KPI',
+    100 as 'Rank',
+    0 as 'Valor',
+    "padding" as 'RecordType';
+
+-- =============================================
+-- STEP 5: Merge real data + padding and sort
+-- Sorting ensures managers stay grouped
+-- and padding appears after real KPIs.
+-- =============================================
+result = union q, cp;
+result = order result by ('Gestor' asc, 'Rank' asc);
+result = foreach result generate
+    'Gestor', 'KPI', 'Rank', 'Valor', 'RecordType';
