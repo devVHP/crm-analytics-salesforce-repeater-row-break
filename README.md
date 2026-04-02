@@ -1,6 +1,6 @@
 ## Problem
 
-While developing KPI cards in CRM Analytics using a repeater, I noticed that there was no built-in way to group cards by owner. The final layout displayed cards side by side, even when they belonged to different owners.
+While developing KPI cards in Salesforce CRM Analytics using a repeater, I noticed that there was no built-in way to group cards by owner. The final layout displayed cards side by side, even when they belonged to different owners.
 
 Visually, this becomes confusing and not very user-friendly. The user would need to inspect each card individually to understand where one owner’s data starts and ends.
 
